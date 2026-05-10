@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authenticating</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #d9e0e8;
+            --surface: rgba(255, 253, 248, 0.92);
+            --ink: #1f1d1a;
+            --muted: #324769;
+            --accent: #18253a;
+            --line: rgba(31, 29, 26, 0.08);
+            --shadow: 0 20px 40px rgba(59, 45, 29, 0.12);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            color: var(--ink);
+            font-family: "Space Grotesk", sans-serif;
+            background:
+                radial-gradient(circle at top, rgba(217, 108, 61, 0.18), transparent 32%),
+                linear-gradient(180deg, #dce4ec 0%, #d2dbe5 100%);
+        }
+
+        .panel {
+            width: min(420px, 100%);
+            padding: 32px 28px;
+            border-radius: 24px;
+            border: 1px solid var(--line);
+            background: var(--surface);
+            box-shadow: var(--shadow);
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            font-size: clamp(2rem, 5vw, 2.8rem);
+            letter-spacing: -0.04em;
+        }
+
+        p {
+            margin: 0;
+            color: var(--muted);
+            font-size: 0.98rem;
+        }
+
+        .loader {
+            display: inline-flex;
+            gap: 10px;
+            margin: 24px 0 18px;
+            align-items: flex-end;
+            height: 42px;
+        }
+
+        .loader span {
+            width: 12px;
+            height: 16px;
+            border-radius: 999px;
+            background: linear-gradient(180deg, #6d5b93 0%, var(--accent) 100%);
+            animation: rise 0.8s ease-in-out infinite;
+            transform-origin: bottom;
+        }
+
+        .loader span:nth-child(2) {
+            animation-delay: 0.12s;
+        }
+
+        .loader span:nth-child(3) {
+            animation-delay: 0.24s;
+        }
+
+        @keyframes rise {
+            0%,
+            100% {
+                transform: scaleY(0.45);
+                opacity: 0.45;
+            }
+
+            50% {
+                transform: scaleY(1.2);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <main class="panel">
+        <h1>Completing Login</h1>
+        <div class="loader" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+        <p id="status">Completing authentication...</p>
+    </main>
+</body>
+<script>
+    (async () => {
+        const status = document.getElementById("status");
+        const code = new URLSearchParams(window.location.search).get("code");
+
+        function isTokenExpired(token) {
+            if (!token) {
+                return true;
+            }
+
+            try {
+                const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+                return !payload.exp || payload.exp * 1000 <= Date.now();
+            } catch {
+                return true;
+            }
+        }
+
+        const savedAccessToken = localStorage.getItem("accessToken");
+
+        if (savedAccessToken && isTokenExpired(savedAccessToken)) {
+            localStorage.clear();
+            status.textContent = "Your session expired. Redirecting...";
+            window.location.replace("/");
+            return;
+        }
+
+        if (!code) {
+            status.textContent = "Missing authorization code.";
+            return;
+        }
+
+        try {
+            const tokenResponse = await fetch("/auth/exchange", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    code
+                })
+            });
+            const tokenData = await tokenResponse.json();
+
+            if (!tokenResponse.ok || !tokenData?.accessToken) {
+                throw new Error(tokenData?.message || "Unable to complete authentication.");
+            }
+
+            if (isTokenExpired(tokenData.accessToken)) {
+                localStorage.clear();
+                status.textContent = "Your session expired. Redirecting...";
+                window.location.replace("/");
+                return;
+            }
+
+            localStorage.setItem("accessToken", tokenData.accessToken);
+            if (tokenData.user) {
+                localStorage.setItem("user", JSON.stringify(tokenData.user));
+            }
+            localStorage.setItem("isLoggedIn", "true");
+            window.location.href = "/home";
+        } catch (error) {
+            status.textContent = error.message || "Authentication failed.";
+        }
+    })();
+</script>
+
+</html>
